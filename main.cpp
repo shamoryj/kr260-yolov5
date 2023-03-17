@@ -175,8 +175,10 @@ std::vector<ImageResult> run_images(std::unique_ptr<vitis::ai::YOLOv3>& yolo,
   }
 
   std::cout << std::endl
-            << "Completed " << images.size() << " image(s) in " << total_duration << " milliseconds!" << std::endl;
-  std::cout << "Average time: " << total_duration / images.size() << " ms" << std::endl;
+            << "Completed " << images.size() << " image(s) in "
+            << total_duration << " milliseconds!" << std::endl;
+  std::cout << "Average time: " << total_duration / images.size() << " ms"
+            << std::endl;
 
   return img_results;
 }
@@ -240,13 +242,33 @@ void process_results(std::vector<ImageResult>& img_results, bool print_results,
 
     // Save the output image
     if (save_img) {
-      std::string save_img_ext = img_result.img.path.extension().string();
-      std::string save_img_path =
-          img_result.img.path.replace_extension().string() + "_result" +
-          save_img_ext;
-      cv::imwrite(save_img_path, img_result.img.mat);
-      std::cout << std::endl
-                << "Result image saved to: " << save_img_path << std::endl;
+      bool success = true;
+      std::filesystem::path save_img_dir =
+          img_result.img.path.parent_path() / "results";
+
+      // Create save img directory if it does not exist
+      if (!std::filesystem::exists(save_img_dir)) {
+        try {
+          std::filesystem::create_directory(save_img_dir);
+        } catch (const std::exception& ex) {
+          std::cerr << "Failed to create directory: " << ex.what() << std::endl;
+          success = false;
+        }
+      }
+
+      // Attempt to save image
+      if (success) {
+        std::string save_img_path =
+            save_img_dir / img_result.img.path.filename();
+        if (cv::imwrite(save_img_path, img_result.img.mat)) {
+          std::cout << std::endl
+                    << "Result image saved to: " << save_img_path << std::endl;
+        } else {
+          std::cout << std::endl
+                    << "Failed to save result image to: " << save_img_path
+                    << std::endl;
+        }
+      }
     }
   }
 }
@@ -256,7 +278,7 @@ int main(int argc, char* argv[]) {
   auto yolo = vitis::ai::YOLOv3::create("quant_comp_v5m", true);
 
   // Load images
-  std::vector<Image> images = load_images("~/test_files/sfbay_1.png");
+  std::vector<Image> images = load_images("~/code/scenes");
 
   // Run images
   auto img_results = run_images(yolo, images);
