@@ -1,0 +1,8 @@
+{
+    "lib": "libvart-dpu-runner.so",
+    "filename": "quant_comp_v5m.xmodel",
+    "kernel": [
+        "subgraph_Model__Model_C3_model__C3_13__Cat_cat__input_317"
+    ],
+    "target": "DPUCZDX8G_ISA1_B4096"
+}
