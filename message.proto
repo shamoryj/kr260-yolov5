@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+message MyMessage {
+  enum CommandType {
+    REQUEST = 0;
+    REPLY = 1;
+  }
+  message Image {
+    bytes data = 1;
+    int32 width = 2;
+    int32 height = 3;
+    int32 channels = 4;
+  }
+  message Request {
+    bool get_image = 1;
+    bool get_bounding_box_image = 2;
+  }
+  message Reply {
+    message BoundingBox {
+      string label = 1;
+      int32 x_min = 2;
+      int32 y_min = 3;
+      int32 x_max = 4;
+      int32 y_max = 5;
+      float confidence = 6;
+    }
+    repeated BoundingBox bounding_boxes = 1;
+    Image image = 2;
+    Image bounding_box_image = 3;
+  }
+  int32 id = 1;
+  double time_sent = 2;
+  CommandType command = 3;
+  Request request = 4;
+  Reply reply = 5;
+}

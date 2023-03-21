@@ -1,11 +1,20 @@
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <random>
 #include <string>
 #include <vitis/ai/yolov3.hpp>
+
+#include "message.pb.h"
 
 class Timer {
  private:
@@ -37,6 +46,22 @@ class Timer {
   }
 };
 
+struct RandomGenerator {
+  // Mersenne Twister engine with a 32-bit state size
+  std::mt19937_64 mt_engine;
+
+  // Constructor that seeds the engine with the current time
+  RandomGenerator() : mt_engine(std::random_device()()) {}
+
+  // Function to generate a random number
+  unsigned int next() { return static_cast<unsigned int>(mt_engine()); }
+
+  // Function to generate a random number in the range [start, end]
+  unsigned int next_in_range(unsigned int start, unsigned int end) {
+    return start + (next() % (end - start + 1));
+  }
+};
+
 struct Image {
   cv::Mat mat;
   std::filesystem::path path;
@@ -44,6 +69,11 @@ struct Image {
   Image(cv::Mat& img, std::filesystem::path& path) {
     this->mat = img;
     this->path = path;
+  }
+
+  Image(const Image& other) {
+    this->mat = other.mat.clone();
+    this->path = other.path;
   }
 };
 
@@ -74,12 +104,13 @@ struct DetectedObject {
 
 struct ImageResult {
   Image img;
+  Image bbox_img;
   std::vector<DetectedObject> objs;
 
   ImageResult(
-      Image& img,
+      const Image& img,
       const std::vector<vitis::ai::YOLOv3Result::BoundingBox>& img_bboxes)
-      : img(img) {
+      : img(img), bbox_img(img) {
     for (auto& box : img_bboxes) {
       objs.emplace_back(box, img.mat);
     }
@@ -91,6 +122,14 @@ bool is_image_file(const std::filesystem::path& path) {
   std::transform(ext.begin(), ext.end(), ext.begin(),
                  [](unsigned char c) { return std::tolower(c); });
   return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp";
+}
+
+double secondsSinceEpoch() {
+  // get the current time
+  std::time_t current_time = std::time(nullptr);
+
+  // convert to seconds since the epoch
+  return std::difftime(current_time, 0);
 }
 
 std::vector<Image> load_images(const std::string& path) {
@@ -235,9 +274,7 @@ void process_results(std::vector<ImageResult>& img_results, bool print_results,
                   << obj.ymin << "\t" << obj.xmax << "\t" << obj.ymax << "\t"
                   << obj.confidence << std::endl;
       }
-      if (save_img) {
-        draw_bounding_box(img_result.img.mat, obj);
-      }
+      draw_bounding_box(img_result.bbox_img.mat, obj);
     }
 
     // Save the output image
@@ -258,33 +295,240 @@ void process_results(std::vector<ImageResult>& img_results, bool print_results,
 
       // Attempt to save image
       if (success) {
-        std::string save_img_path =
+        img_result.bbox_img.path =
             save_img_dir / img_result.img.path.filename();
-        if (cv::imwrite(save_img_path, img_result.img.mat)) {
+        if (cv::imwrite(img_result.bbox_img.path, img_result.bbox_img.mat)) {
           std::cout << std::endl
-                    << "Result image saved to: " << save_img_path << std::endl;
+                    << "Result image saved to: " << img_result.bbox_img.path
+                    << std::endl;
         } else {
           std::cout << std::endl
-                    << "Failed to save result image to: " << save_img_path
-                    << std::endl;
+                    << "Failed to save result image to: "
+                    << img_result.bbox_img.path << std::endl;
         }
       }
     }
   }
 }
 
-int main(int argc, char* argv[]) {
-  // Load YOLO model
-  auto yolo = vitis::ai::YOLOv3::create("quant_comp_v5m", true);
+struct Server {
+ private:
+  int listenSockfd = -1;
+  short port;
+  int sockfd = -1;
+
+ public:
+  explicit Server(short port) : port(port) {}
+  ~Server() {
+    // Close the socket and listening socket
+    close(sockfd);
+    close(listenSockfd);
+  }
+  bool start() {
+    if (listenSockfd != -1) {
+      std::cerr << "Error: Server already started" << std::endl;
+      return true;
+    }
+    // Create a TCP socket to listen for incoming connections
+    listenSockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenSockfd == -1) {
+      std::cerr << "Error: Failed to create socket" << std::endl;
+      return false;
+    }
+
+    // Set the SO_REUSEADDR option to allow reuse of the same address and port
+    int reuseaddr = 1;
+    if (setsockopt(listenSockfd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr,
+                   sizeof(reuseaddr)) == -1) {
+      std::cerr << "Error: Failed to set SO_REUSEADDR option" << std::endl;
+      return false;
+    }
+
+    // Bind the socket to a port
+    struct sockaddr_in listenAddr {};
+    memset(&listenAddr, 0, sizeof(listenAddr));
+    listenAddr.sin_family = AF_INET;
+    listenAddr.sin_addr.s_addr = INADDR_ANY;
+    listenAddr.sin_port = htons(port);
+    if (bind(listenSockfd, (struct sockaddr*)&listenAddr, sizeof(listenAddr)) ==
+        -1) {
+      std::cerr << "Error: Failed to bind socket" << std::endl;
+      return false;
+    }
+
+    // Listen for incoming connections
+    if (listen(listenSockfd, 5) == -1) {
+      std::cerr << "Error: Failed to listen for incoming connections"
+                << std::endl;
+      return false;
+    }
+
+    return true;
+  }
+
+  bool accept_connection() {
+    if (listenSockfd == -1) {
+      std::cerr << "Error: Server is not running" << std::endl;
+      return false;
+    }
+    // Accept an incoming connection
+    struct sockaddr_in remoteAddr {};
+    socklen_t remoteAddrLen = sizeof(remoteAddr);
+    sockfd =
+        accept(listenSockfd, (struct sockaddr*)&remoteAddr, &remoteAddrLen);
+    if (sockfd == -1) {
+      std::cerr << "Error: Failed to accept incoming connection" << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+  bool receive_message(MyMessage& message) {
+    if (listenSockfd == -1) {
+      std::cerr << "Error: Server is not running" << std::endl;
+      return false;
+    }
+    if (sockfd == -1) {
+      std::cerr << "Error: No established connection" << std::endl;
+      return false;
+    }
+    // Read the message from the socket
+    char buffer[1024];
+    ssize_t numRecv = recv(sockfd, buffer, sizeof(buffer), 0);
+    if (numRecv == -1) {
+      std::cerr << "Error: Failed to receive message" << std::endl;
+      return false;
+    }
+
+    // Parse the message from the byte array
+    message.ParseFromArray(buffer, numRecv);
+    return true;
+  }
+
+  bool send_message(MyMessage& message) {
+    if (listenSockfd == -1) {
+      std::cerr << "Error: Server is not running" << std::endl;
+      return false;
+    }
+    if (sockfd == -1) {
+      std::cerr << "Error: No established connection" << std::endl;
+      return false;
+    }
+    // Serialize the message to a byte array
+    message.set_time_sent(secondsSinceEpoch());
+    size_t size = message.ByteSizeLong();
+    char* messageData = (char*)malloc(size);
+    message.SerializeToArray(messageData, size);
+
+    // Send the message size to the socket
+    ssize_t numSent = send(sockfd, &size, sizeof(size), 0);
+    if (numSent == -1) {
+      std::cerr << "Error: Failed to send message size" << std::endl;
+      free(messageData);
+      return false;
+    }
+
+    // Send the message data to the socket
+    size_t bytesSent = 0;
+    while (bytesSent < size) {
+      numSent = send(sockfd, messageData + bytesSent, size - bytesSent, 0);
+      if (numSent == -1) {
+        std::cerr << "Error: Failed to send message" << std::endl;
+        free(messageData);
+        return false;
+      }
+      bytesSent += numSent;
+    }
+
+    free(messageData);
+    return true;
+  }
+
+};
+
+std::vector<Image> get_camera_images(const MyMessage& request) {
+  // TODO: Implement camera control here
+  static RandomGenerator rng;
 
   // Load images
   std::vector<Image> images = load_images("~/code/scenes");
+  unsigned int rand_img_idx = rng.next_in_range(0, images.size());
+  return std::vector<Image>(images.begin() + rand_img_idx,
+                            images.begin() + rand_img_idx + 1);
+}
 
-  // Run images
-  auto img_results = run_images(yolo, images);
+void package_image(const cv::Mat& img_src, MyMessage::Image* img_dst) {
+  // Copy the image data to the img_dst message
+  img_dst->set_data(reinterpret_cast<const char*>(img_src.data),
+                    img_src.total() * img_src.elemSize());
+  img_dst->set_width(img_src.cols);
+  img_dst->set_height(img_src.rows);
+  img_dst->set_channels(img_src.channels());
+}
 
-  // Process results
-  process_results(img_results, true, true);
+void build_reply(const MyMessage& request, MyMessage& reply,
+                 std::vector<ImageResult>& img_results) {
+  if (request.command() == MyMessage::REQUEST) {
+    reply.set_id(request.id());
+    reply.set_command(MyMessage::REPLY);
+    for (auto& result : img_results) {
+      for (auto& bbox : result.objs) {
+        MyMessage::Reply::BoundingBox* box =
+            reply.mutable_reply()->add_bounding_boxes();
+        box->set_label(std::to_string(bbox.label));
+        box->set_x_min(bbox.xmin);
+        box->set_y_min(bbox.ymin);
+        box->set_x_max(bbox.xmax);
+        box->set_y_max(bbox.ymax);
+        box->set_confidence(bbox.confidence);
+      }
+      if (request.request().get_image()) {
+        package_image(result.img.mat, reply.mutable_reply()->mutable_image());
+      }
+      if (request.request().get_bounding_box_image()) {
+        package_image(result.bbox_img.mat,
+                      reply.mutable_reply()->mutable_bounding_box_image());
+      }
+    }
+  } else {
+    std::cerr << "Error: Unsupported command" << std::endl;
+  }
+}
+
+int main(int argc, char* argv[]) {
+  Server serv(12345);
+
+  // Start the server
+  if (!serv.start()) {
+    return EXIT_FAILURE;
+  }
+
+  // Load YOLO model
+  auto yolo = vitis::ai::YOLOv3::create("quant_comp_v5m", true);
+
+  // Wait for the host to connect
+  if (!serv.accept_connection()) {
+    return EXIT_FAILURE;
+  }
+  while (true) {
+    // Wait for request from host
+    MyMessage request;
+    serv.receive_message(request);
+
+    // Get images from camera
+    auto images = get_camera_images(request);
+
+    // Run images
+    auto img_results = run_images(yolo, images);
+
+    // Process results
+    process_results(img_results, true, true);
+
+    // Send results to host
+    MyMessage reply;
+    build_reply(request, reply, img_results);
+    serv.send_message(reply);
+  }
 
   return EXIT_SUCCESS;
 }
