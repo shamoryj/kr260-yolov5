@@ -452,7 +452,7 @@ std::vector<Image> get_camera_images(const MyMessage& request) {
 
   // Load images
   std::vector<Image> images = load_images("~/code/scenes");
-  unsigned int rand_img_idx = rng.next_in_range(0, images.size());
+  unsigned int rand_img_idx = rng.next_in_range(0, images.size() - 1);
   return std::vector<Image>(images.begin() + rand_img_idx,
                             images.begin() + rand_img_idx + 1);
 }
