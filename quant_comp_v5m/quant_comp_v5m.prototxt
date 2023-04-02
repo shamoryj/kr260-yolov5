@@ -9,13 +9,13 @@ model {
   }
   model_type : YOLOv3
   yolo_v3_param {
-    num_classes: 80
+    num_classes: 2
     anchorCnt: 3
     layer_name: "ip_fix"
     layer_name: "ip_3_fix"
     layer_name: "ip_1_fix"
     conf_threshold: 0.1
-    nms_threshold: 0.5
+    nms_threshold: 0.1
     biases: 10
     biases: 13
     biases: 16

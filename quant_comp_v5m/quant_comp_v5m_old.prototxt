@@ -1,0 +1,42 @@
+model {
+  kernel {
+     mean: 0.0
+     mean: 0.0
+     mean: 0.0
+     scale: 0.00392156
+     scale: 0.00392156
+     scale: 0.00392156
+  }
+  model_type : YOLOv3
+  yolo_v3_param {
+    num_classes: 80
+    anchorCnt: 3
+    layer_name: "ip_fix"
+    layer_name: "ip_3_fix"
+    layer_name: "ip_1_fix"
+    conf_threshold: 0.1
+    nms_threshold: 0.1
+    biases: 10
+    biases: 13
+    biases: 16
+    biases: 30
+    biases: 33 
+    biases: 23
+    biases: 30
+    biases: 61
+    biases: 62
+    biases: 45 
+    biases: 59
+    biases: 119
+    biases: 116
+    biases: 90
+    biases: 156
+    biases: 198
+    biases: 373 
+    biases: 326
+    test_mAP: false
+    type: YOLOV5
+  }
+  is_tf: false
+}
+
