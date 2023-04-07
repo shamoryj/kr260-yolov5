@@ -221,6 +221,8 @@ std::vector<std::string> YoloModel::get_classes(
     }
   }
   file.close();
+
+  return classes;
 }
 
 void YoloModel::draw_bounding_box(cv::Mat& img, DetectedObject& obj) {
