@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include "YoloModel.hpp"
 
 std::vector<Image> YoloModel::load_images(const std::string& path) {
@@ -55,31 +57,36 @@ YoloModel::YoloModel(const std::string& path) {
     std::string name = model_path.stem().string();
     std::filesystem::path prototxt_path = model_path / (name + ".prototxt");
     std::filesystem::path xmodel_path = model_path / (name + ".xmodel");
+    std::filesystem::path classcsv_path = model_path / (name + ".classcsv");
 
     if (std::filesystem::exists(prototxt_path) &&
-        std::filesystem::exists(xmodel_path)) {
+        std::filesystem::exists(xmodel_path) &&
+        std::filesystem::exists(classcsv_path)) {
       std::filesystem::path current_path =
           std::filesystem::current_path();  // get current directory path
       std::filesystem::path new_dir_path =
           current_path / name;  // create new directory path
 
-      try {
-        std::filesystem::create_directory(
-            new_dir_path);  // create new directory
-        std::filesystem::copy(
-            prototxt_path,
-            new_dir_path);  // copy .prototxt file to new directory
-        std::filesystem::copy(
-            xmodel_path, new_dir_path);  // copy .xmodel file to new directory
+      std::filesystem::create_directory(
+          new_dir_path);  // create new directory
+      std::filesystem::copy(
+          prototxt_path, new_dir_path,
+          std::filesystem::copy_options::
+              overwrite_existing);  // copy .prototxt file to new directory
+      std::filesystem::copy(
+          xmodel_path, new_dir_path,
+          std::filesystem::copy_options::
+              overwrite_existing);  // copy .xmodel file to new directory
+      std::filesystem::copy(
+          classcsv_path, new_dir_path,
+          std::filesystem::copy_options::
+              overwrite_existing);  // copy .classcsv file to new directory
 
-        this->model = vitis::ai::YOLOv3::create(name, true);
-        this->class_labels = get_classes(prototxt_path);
-      } catch (std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-      }
+      this->model = vitis::ai::YOLOv3::create(name, true);
+      this->class_labels = get_classes(classcsv_path);
     } else {
       std::cerr << "Model path directory does not contain .prototxt and/or "
-                   ".xmodel files with the same name."
+                   ".xmodel and/or .classcsv files with the same name."
                 << std::endl;
       std::cerr << "For .prototxt details, see: "
                    "https://docs.xilinx.com/r/en-US/ug1354-xilinx-ai-sdk/"
@@ -91,8 +98,7 @@ YoloModel::YoloModel(const std::string& path) {
   }
 }
 
-std::vector<ImageResult> YoloModel::run_images(
-    std::vector<Image>& images) {
+std::vector<ImageResult> YoloModel::run_images(std::vector<Image>& images) {
   std::vector<ImageResult> img_results;
   Timer t;
   long long total_duration = 0;
@@ -194,24 +200,20 @@ std::filesystem::path YoloModel::get_absolute_path(const std::string& path) {
 }
 
 std::vector<std::string> YoloModel::get_classes(
-    const std::filesystem::path& prototxt_path) {
-  std::ifstream file(prototxt_path);
-  if (!file.is_open()) {
-    std::cerr << "Failed to open file " << prototxt_path << std::endl;
-    return {};
+    const std::filesystem::path& classcsv_path) {
+  std::ifstream file(classcsv_path);
+  if (!file) {
+    throw std::runtime_error("Failed to open file: " + classcsv_path.string());
   }
 
   std::vector<std::string> classes;
   std::string line;
   while (std::getline(file, line)) {
-    // remove leading whitespace
-    line.erase(0, line.find_first_not_of(" \t"));
-
-    if (line.compare(0, 8, "classes:") == 0) {
-      // extract class label string between quotes
-      std::string label = line.substr(line.find('"') + 1);
-      label = label.substr(0, label.find('"'));
-      classes.push_back(label);
+    std::istringstream ss(line);
+    std::vector<std::string> row;
+    std::string cell;
+    while (std::getline(ss, cell, ',')) {
+      classes.push_back(cell);
     }
   }
   file.close();

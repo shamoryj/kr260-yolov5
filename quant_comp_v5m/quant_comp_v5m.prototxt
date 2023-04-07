@@ -38,7 +38,4 @@ model {
     type: YOLOV5
   }
   is_tf: false
-  classes: "ship"
-  classes: "dock"
 }
-
