@@ -111,6 +111,6 @@ class YoloModel {
       const std::filesystem::path& prototxt_path);
   void draw_bounding_box(cv::Mat& img, DetectedObject& obj);
 
-  std::unique_ptr<vitis::ai::YOLOv3> model;
+  std::unique_ptr<vitis::ai::YOLOv3> model{};
   std::vector<std::string> class_labels;
 };

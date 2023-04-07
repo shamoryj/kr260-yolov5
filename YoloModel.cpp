@@ -50,7 +50,7 @@ std::vector<Image> YoloModel::load_images(const std::string& path) {
 }
 
 YoloModel::YoloModel(const std::string& path) {
-  std::filesystem::path model_path = get_absolute_path(model_path);
+  std::filesystem::path model_path = get_absolute_path(path);
   if (std::filesystem::is_directory(model_path)) {
     std::string name = model_path.stem().string();
     std::filesystem::path prototxt_path = model_path / (name + ".prototxt");
@@ -203,17 +203,11 @@ std::vector<std::string> YoloModel::get_classes(
 
   std::vector<std::string> classes;
   std::string line;
-  bool in_yolo_v3_param = false;
   while (std::getline(file, line)) {
-    // remove leading/trailing whitespace
+    // remove leading whitespace
     line.erase(0, line.find_first_not_of(" \t"));
-    line.erase(line.find_last_not_of(" \t") + 1);
 
-    if (line.compare("yolo_v3_param {") == 0) {
-      in_yolo_v3_param = true;
-    } else if (line.compare("}") == 0) {
-      in_yolo_v3_param = false;
-    } else if (in_yolo_v3_param && line.compare(0, 8, "classes:") == 0) {
+    if (line.compare(0, 8, "classes:") == 0) {
       // extract class label string between quotes
       std::string label = line.substr(line.find('"') + 1);
       label = label.substr(0, label.find('"'));

@@ -36,9 +36,9 @@ model {
     biases: 326
     test_mAP: false
     type: YOLOV5
-    classes: "ship"
-    classes: "dock"
   }
   is_tf: false
+  classes: "ship"
+  classes: "dock"
 }
 
