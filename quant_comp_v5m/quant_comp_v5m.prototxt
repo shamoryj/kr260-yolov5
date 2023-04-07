@@ -14,8 +14,8 @@ model {
     layer_name: "ip_fix"
     layer_name: "ip_3_fix"
     layer_name: "ip_1_fix"
-    conf_threshold: 0.1
-    nms_threshold: 0.1
+    conf_threshold: 0.25
+    nms_threshold: 0.45
     biases: 10
     biases: 13
     biases: 16
@@ -36,6 +36,8 @@ model {
     biases: 326
     test_mAP: false
     type: YOLOV5
+    classes: "ship"
+    classes: "dock"
   }
   is_tf: false
 }

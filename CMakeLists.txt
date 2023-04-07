@@ -47,7 +47,7 @@ target_link_libraries(board opencv_highgui)
 target_link_libraries(board ${PROTOBUF_LIBRARIES})
 
 # Add the host executable
-add_executable(host host.cpp ${PROTO_SRCS} ${PROTO_HDRS})
+add_executable(host host.cpp YoloModel.hpp ${PROTO_SRCS} ${PROTO_HDRS})
 # Link against OpenCV libraries
 target_link_libraries(host ${OpenCV_LIBS})
 target_link_libraries(host opencv_core)
@@ -59,7 +59,7 @@ target_link_libraries(host opencv_highgui)
 target_link_libraries(host ${PROTOBUF_LIBRARIES})
 
 # Add the benchmark executable
-add_executable(benchmark benchmark.cpp)
+add_executable(benchmark benchmark.cpp YoloModel.cpp)
 # Link against the Vitis AI libraries
 target_link_libraries(benchmark vitis_ai_library-yolov3)
 target_link_libraries(benchmark vitis_ai_library-dpu_task)
