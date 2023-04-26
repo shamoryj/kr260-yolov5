@@ -22,7 +22,7 @@ file(GLOB PROTO_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*.proto")
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
 
 # Add the board executable
-add_executable(board board.cpp ${PROTO_SRCS} ${PROTO_HDRS})
+add_executable(board board.cpp Server.hpp YoloModel.cpp ${PROTO_SRCS} ${PROTO_HDRS})
 # Link against the Vitis AI libraries
 target_link_libraries(board vitis_ai_library-yolov3)
 target_link_libraries(board vitis_ai_library-dpu_task)
